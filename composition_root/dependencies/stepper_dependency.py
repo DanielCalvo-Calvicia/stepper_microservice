@@ -10,7 +10,7 @@ from application.dtos.adapter_inbound_dtos import InitInboundAdapterDto
 from infrastructure.outbound.mock_adapter import MockStepperAdapter
 from infrastructure.outbound.tmc2209_adapter import TMC2209Adapter, GPIO_AVAILABLE
 from infrastructure.inbound.http.fastapi_adapter import FastApiAdapter
-from runtime.logger import get_logger
+from shared_logging import TracingMiddleware, get_logger
 
 logger = get_logger("composition_root")
 
@@ -32,10 +32,11 @@ def generate_stepper_dependency() -> StepperDependency:
             for k, v in parsed_configs.items()
         }
     except Exception as e:
-        logger.error("Failed to parse STEPPER_CONFIGS from .env: %s", e)
+        logger.error("Failed to parse STEPPER_CONFIGS from .env", error=e)
         raise e
 
     default_speed = float(os.getenv("DEFAULT_SPEED_LIMIT", "1000.0"))
+    steps_per_revolution = int(os.getenv("STEPS_PER_REVOLUTION", "200"))
     outbound_config = InitOutboundAdapterDto(steppers=steppers_map, default_max_speed=default_speed)
 
     # Instantiate outbound adapter
@@ -49,7 +50,7 @@ def generate_stepper_dependency() -> StepperDependency:
 
     # 2. Build core domain service
     logger.info("Instantiating stepper application service.")
-    service = StepperService(outbound_port=adapter_outbound, steppers_config=parsed_configs, default_max_speed=default_speed)
+    service = StepperService(outbound_port=adapter_outbound, steppers_config=parsed_configs, default_max_speed=default_speed, steps_per_revolution=steps_per_revolution)
 
     # 3. Handle FastAPI App configuration and Lifespan
     @asynccontextmanager
@@ -75,6 +76,7 @@ def generate_stepper_dependency() -> StepperDependency:
     inbound_config = InitInboundAdapterDto(allow_origins=origins)
     logger.info("Instantiating inbound FastAPI adapter.")
     adapter_inbound = FastApiAdapter(service_port=service, app=app, config=inbound_config)
+    app.add_middleware(TracingMiddleware)  # added last so it is outermost
 
     return StepperDependency(
         adapter_outbound=adapter_outbound,

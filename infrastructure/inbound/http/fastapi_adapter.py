@@ -1,12 +1,16 @@
 import asyncio
 import json
 import base64
-import time
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Any
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse, Response
 from starlette.requests import ClientDisconnect
+
+from contracts.api.common.envelope import ApiEnvelope
+from contracts.api.microservices.common.availability import AvailabilityResponse
+from contracts.api.microservices.common.health_check import HealthCheckResponse
+from contracts.api.microservices.stepper.batch import StepperBatchResult
 
 from application.ports.adapter_inbound_port import AdapterInboundPort
 from application.ports.service_port import StepperServicePort
@@ -24,7 +28,7 @@ from application.dtos.mapper.service_to_adapter_inbound import (
     map_service_to_inbound_batch_response,
     map_service_to_inbound_stream_response
 )
-from runtime.logger import get_logger
+from shared_logging import get_logger
 
 logger = get_logger("infrastructure.inbound")
 
@@ -90,7 +94,7 @@ class FastApiAdapter(AdapterInboundPort):
         self.app = app
         self.config = config
         
-        logger.info("Initializing FastApiAdapter: allow_origins=%s", config.allow_origins)
+        logger.info("Initializing FastApiAdapter", allow_origins=config.allow_origins)
         self.register_routes(self.app)
 
     def register_routes(self, app: FastAPI) -> None:
@@ -98,68 +102,38 @@ class FastApiAdapter(AdapterInboundPort):
 
         @app.get("/health", tags=["Health"])
         async def health_check() -> JSONResponse:
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content={
-                    "action": "health_check",
-                    "status": "success",
-                    "status_code": status.HTTP_200_OK,
-                    "message": "Stepper microservice is healthy",
-                    "timestamp": time.time(),
-                    "data": {"status": "ok"}
-                }
+            envelope = ApiEnvelope.success("health_check", "Stepper microservice is healthy", HealthCheckResponse(healthy=True))
+            return JSONResponse(status_code=status.HTTP_200_OK, content=envelope.to_dict())
+
+        @app.get("/available", tags=["Health"])
+        async def available() -> JSONResponse:
+            is_available = self.service_port.is_available()
+            reason = None if is_available else "the motor driver did not initialize"
+            envelope = ApiEnvelope.success(
+                "check_availability", "Availability checked successfully",
+                AvailabilityResponse(is_available=is_available, reason=reason),
             )
+            return JSONResponse(status_code=status.HTTP_200_OK, content=envelope.to_dict())
 
         @app.post("/control/{stepper_id}/rotate", tags=["Control"])
-        async def rotate_stepper(stepper_id: str, value: float, speed: float = 0.0, direction: str = "forward") -> JSONResponse:
-            inbound_req = StepperBatchRequestDto(stepper_id=stepper_id, action="rotate", value=value, speed=speed, direction=direction)
+        async def rotate_stepper(stepper_id: str, rotations: float, rpm: float = 0.0, direction: str = "forward") -> JSONResponse:
+            # rotate: rotations = full revolutions, rpm = rotational speed.
+            # These map onto the generic batch DTO fields value/speed respectively.
+            inbound_req = StepperBatchRequestDto(stepper_id=stepper_id, action="rotate", value=rotations, speed=rpm, direction=direction)
             res = await self.process_batch(inbound_req)
-            status_code = status.HTTP_200_OK if res.success else status.HTTP_400_BAD_REQUEST
-            return JSONResponse(
-                status_code=status_code,
-                content={
-                    "action": "rotate",
-                    "status": "success" if res.success else "error",
-                    "status_code": status_code,
-                    "message": res.message,
-                    "timestamp": time.time(),
-                    "data": None
-                }
-            )
+            return self._batch_response("rotate", res)
 
         @app.post("/control/{stepper_id}/steps", tags=["Control"])
         async def steps_stepper(stepper_id: str, value: float, speed: float = 0.0, direction: str = "forward") -> JSONResponse:
             inbound_req = StepperBatchRequestDto(stepper_id=stepper_id, action="steps", value=value, speed=speed, direction=direction)
             res = await self.process_batch(inbound_req)
-            status_code = status.HTTP_200_OK if res.success else status.HTTP_400_BAD_REQUEST
-            return JSONResponse(
-                status_code=status_code,
-                content={
-                    "action": "steps",
-                    "status": "success" if res.success else "error",
-                    "status_code": status_code,
-                    "message": res.message,
-                    "timestamp": time.time(),
-                    "data": None
-                }
-            )
+            return self._batch_response("steps", res)
 
         @app.post("/control/{stepper_id}/stop", tags=["Control"])
         async def stop_stepper(stepper_id: str) -> JSONResponse:
             inbound_req = StepperBatchRequestDto(stepper_id=stepper_id, action="stop")
             res = await self.process_batch(inbound_req)
-            status_code = status.HTTP_200_OK if res.success else status.HTTP_400_BAD_REQUEST
-            return JSONResponse(
-                status_code=status_code,
-                content={
-                    "action": "stop",
-                    "status": "success" if res.success else "error",
-                    "status_code": status_code,
-                    "message": res.message,
-                    "timestamp": time.time(),
-                    "data": None
-                }
-            )
+            return self._batch_response("stop", res)
 
         @app.post("/process/stream/{stepper_id}/set", tags=["Control"])
         async def set_stream_http(request: Request, stepper_id: str) -> Response:
@@ -186,7 +160,7 @@ class FastApiAdapter(AdapterInboundPort):
                 except ClientDisconnect:
                     logger.info("HTTP Stream disconnected.")
                 except Exception as e:
-                    logger.error("Error reading stream: %s", e)
+                    logger.error("Error reading stream", e=e)
                     raise
 
             setup_future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
@@ -238,6 +212,15 @@ class FastApiAdapter(AdapterInboundPort):
     @property
     def get_app(self) -> Any:
         return self.app
+
+    @staticmethod
+    def _batch_response(action: str, res) -> JSONResponse:
+        status_code = status.HTTP_200_OK if res.success else status.HTTP_400_BAD_REQUEST
+        data = StepperBatchResult(success=res.success, message=res.message)
+        make = ApiEnvelope.success if res.success else (
+            lambda a, m, d: ApiEnvelope.failure(a, m, status_code, d))
+        envelope = make(action, res.message, data)
+        return JSONResponse(status_code=status_code, content=envelope.to_dict())
 
     async def process_batch(self, request: StepperBatchRequestDto):
         service_req = map_inbound_to_service_batch_request(request)

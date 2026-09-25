@@ -16,3 +16,8 @@ class AdapterOutboundPort(ABC):
     async def cleanup(self) -> MotorStatusDto:
         """Release hardware resources gracefully."""
         pass
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """True if the motor driver initialized well enough to attempt a movement. No pulse is sent."""
+        pass

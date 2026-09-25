@@ -18,7 +18,7 @@ async def test_rotate():
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{BASE_URL}/control/{STEPPER_ID}/rotate",
-            params={"value": 360, "speed": 1000, "direction": "forward"}
+            params={"rotations": 1, "rpm": 60, "direction": "forward"}
         )
         print(f"Status: {response.status_code}")
         print(f"Response: {response.json()}")
@@ -48,7 +48,7 @@ async def test_stream():
     async def event_generator():
         yield json.dumps({"type": "stream_started", "payload": {}}) + "\\n"
         await asyncio.sleep(0.5)
-        yield json.dumps({"type": "partial", "payload": {"action": "rotate", "value": 90, "speed": 500, "direction": "forward"}}) + "\\n"
+        yield json.dumps({"type": "partial", "payload": {"action": "rotate", "rotations": 0.25, "rpm": 60, "direction": "forward"}}) + "\\n"
         await asyncio.sleep(0.5)
         yield json.dumps({"type": "completed", "payload": {}}) + "\\n"
         

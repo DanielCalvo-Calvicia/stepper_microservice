@@ -19,7 +19,7 @@ Main responsibilities:
 
 - Start a FastAPI application through Uvicorn.
 - Load runtime configuration (stepper motor pins, speed limits) from `.env`.
-- Expose RESTful batch endpoints for explicit stepper motor control (rotate by degrees, step continuously, or emergency stop).
+- Expose RESTful batch endpoints for explicit stepper motor control (rotate by full revolutions, step continuously, or emergency stop).
 - Accept streaming commands via NDJSON HTTP streaming endpoints for dynamic/continuous control.
 - Control stepper motors using TMC2209 drivers via RPi.GPIO pins (Step, Dir, Enable).
 - Prevent concurrent commands on the same stepper motor using async locks.
@@ -63,7 +63,7 @@ The `FastApiAdapter` receives HTTP requests and maps them to inbound DTOs, then 
 - **`application/ports/`**: Abstract interfaces for inbound, outbound, and service ports.
 - **`application/dtos/`**: Dataclasses defining request and response models.
 - **`application/dtos/mapper/`**: Translation functions between different DTO layers.
-- **`application/services/service.py`**: Implements `StepperService`. Coordinates movements, converts rotation degrees to step counts, and uses per-stepper `asyncio.Lock` to guarantee safe concurrent requests.
+- **`application/services/service.py`**: Implements `StepperService`. Coordinates movements, converts revolutions and RPM into step counts and step rates (using `STEPS_PER_REVOLUTION`), and uses per-stepper `asyncio.Lock` to guarantee safe concurrent requests.
 - **`infrastructure/inbound/http/fastapi_adapter.py`**: Exposes FastAPI REST routes and handles NDJSON streams for motor control.
 - **`infrastructure/outbound/tmc2209_adapter.py`**: Real hardware driver implementation using `RPi.GPIO`. Pulses the Step pin based on the calculated frequency, configures Dir and Enable pins, and allows early cancellation (Emergency Stop).
 - **`infrastructure/outbound/mock_adapter.py`**: A simulated motor driver for local development or testing environments.
@@ -127,14 +127,18 @@ During a graceful shutdown (e.g., `KeyboardInterrupt` or SIGINT), the FastAPI li
 | Protocol | Path | Purpose | Internal Handler |
 | --- | --- | --- | --- |
 | HTTP | `GET /health` | Basic service health response. | `health_check()` |
-| HTTP | `POST /control/{stepper_id}/rotate` | Rotate stepper by a specific degree amount. Options: `value`, `speed`, `direction`. | `rotate_stepper()` |
+| HTTP | `GET /available` | Whether the outbound motor driver initialized (mock or TMC2209/GPIO); no motor movement. | `available()` |
+| HTTP | `POST /control/{stepper_id}/rotate` | Rotate stepper by a number of full revolutions. Options: `rotations`, `rpm`, `direction`. | `rotate_stepper()` |
 | HTTP | `POST /control/{stepper_id}/steps` | Move stepper by a specific number of steps. Options: `value`, `speed`, `direction`. | `steps_stepper()` |
 | HTTP | `POST /control/{stepper_id}/stop` | Emergency stop a moving stepper. | `stop_stepper()` |
-| HTTP | `POST /process/stream/{stepper_id}/set` | NDJSON streaming command ingestion for real-time stepper control. | `set_stream_http()` |
+| HTTP | `POST /process/stream/{stepper_id}/set` | Accepts an NDJSON command stream, but does nothing with the events yet (`StepperService.execute_stream` reads and discards them). Only the batch endpoints above actually move a motor. | `set_stream_http()` |
+
+Non-stream responses use the project's `contracts.api.common.envelope.ApiEnvelope` (`action / status / status_code / message / timestamp / data`); `data` is a `contracts.api.microservices` dataclass (e.g. `StepperBatchResult`, `HealthCheckResponse`, `AvailabilityResponse`). Since 2026-09-22 this service bundles `contracts` from `./vendor/`, matching the other OBLIVION microservices.
 
 ### Environment Variables
 
 - `STEPPER_CONFIGS`: JSON formatted string configuring mapping between `stepper_id` and GPIO pins (`step`, `dir`, `en`). Example: `{"stepper_1": {"step": 17, "dir": 27, "en": 5}}`
-- `DEFAULT_SPEED_LIMIT`: The default maximum speed for movements if 0 or unspecified.
+- `DEFAULT_SPEED_LIMIT`: The default maximum speed (steps per second) for movements if 0 or unspecified.
+- `STEPS_PER_REVOLUTION`: STEP pulses per full shaft revolution (full steps × microsteps). Used to convert `/rotate` `rotations`→steps and `rpm`→steps/sec. Defaults to `200`.
 - `MOCK_HARDWARE`: Set to `1` to bypass RPi.GPIO requirements.
 - `ALLOWED_ORIGINS`: Commas-separated list of allowed CORS origins.

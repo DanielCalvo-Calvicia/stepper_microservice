@@ -1,1 +1,1 @@
-"""Runtime configuration and logging utilities for the stepper microservice."""
+"""Runtime environment resolution for the stepper microservice."""

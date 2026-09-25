@@ -2,7 +2,7 @@ import asyncio
 import time
 from application.ports.adapter_outbound_port import AdapterOutboundPort
 from application.dtos.adapter_outbound_dtos import InitOutboundAdapterDto, MotorCommandDto, MotorStatusDto
-from runtime.logger import get_logger
+from shared_logging import get_logger
 
 try:
     import RPi.GPIO as GPIO
@@ -28,7 +28,13 @@ class TMC2209Adapter(AdapterOutboundPort):
             GPIO.setmode(GPIO.BCM)
             
             for stepper_id, pin_config in config.steppers.items():
-                logger.info("Configuring TMC2209 for %s: STEP=%d, DIR=%d, EN=%d", stepper_id, pin_config.step_pin, pin_config.dir_pin, pin_config.en_pin)
+                logger.info(
+                    "Configuring TMC2209",
+                    stepper_id=stepper_id,
+                    step_pin=pin_config.step_pin,
+                    dir_pin=pin_config.dir_pin,
+                    en_pin=pin_config.en_pin,
+                )
                 
                 # Setup pins
                 GPIO.setup(pin_config.step_pin, GPIO.OUT, initial=GPIO.LOW)
@@ -51,13 +57,39 @@ class TMC2209Adapter(AdapterOutboundPort):
         level = GPIO.HIGH if forward else GPIO.LOW
         GPIO.output(pin_config.dir_pin, level)
 
-    async def _pulse_step(self, stepper_id: str, high_time_sec: float, low_time_sec: float):
-        if not GPIO_AVAILABLE: return
+    def _run_sync_pulse_loop(
+        self,
+        stepper_id: str,
+        steps: int,
+        high_time_sec: float,
+        low_time_sec: float,
+        stop_event: asyncio.Event,
+    ) -> tuple[int, bool]:
+        if not GPIO_AVAILABLE:
+            return 0, False
+
         pin_config = self.config.steppers[stepper_id]
-        GPIO.output(pin_config.step_pin, GPIO.HIGH)
-        await asyncio.sleep(high_time_sec)
-        GPIO.output(pin_config.step_pin, GPIO.LOW)
-        await asyncio.sleep(low_time_sec)
+        steps_completed = 0
+
+        for _ in range(steps):
+            if stop_event.is_set():
+                logger.warning(
+                    "TMC2209 stopped early",
+                    stepper_id=stepper_id,
+                    steps_completed=steps_completed,
+                )
+                return steps_completed, True
+
+            GPIO.output(pin_config.step_pin, GPIO.HIGH)
+            if high_time_sec > 0:
+                time.sleep(high_time_sec)
+            GPIO.output(pin_config.step_pin, GPIO.LOW)
+            if low_time_sec > 0:
+                time.sleep(low_time_sec)
+
+            steps_completed += 1
+
+        return steps_completed, False
 
     async def _execute_hardware_movement(self, request: MotorCommandDto) -> MotorStatusDto:
         if not GPIO_AVAILABLE:
@@ -82,24 +114,34 @@ class TMC2209Adapter(AdapterOutboundPort):
         # Set direction
         self._set_direction(request.stepper_id, request.forward)
 
-        logger.info("TMC2209 %s starting %d steps @ %f steps/sec", request.stepper_id, request.steps, request.speed_steps_per_sec)
+        logger.info(
+            "TMC2209 starting movement",
+            stepper_id=request.stepper_id,
+            steps=request.steps,
+            speed_steps_per_sec=request.speed_steps_per_sec,
+        )
 
-        steps_completed = 0
         try:
-            for i in range(request.steps):
-                if stop_event.is_set():
-                    logger.warning("TMC2209 %s stopped early after %d steps.", request.stepper_id, steps_completed)
-                    return MotorStatusDto(success=True, message=f"Stopped early at {steps_completed}/{request.steps} steps.")
-                    
-                await self._pulse_step(request.stepper_id, high_time_sec, low_time_sec)
-                steps_completed += 1
+            loop = asyncio.get_running_loop()
+            steps_completed, stopped_early = await loop.run_in_executor(
+                None,
+                self._run_sync_pulse_loop,
+                request.stepper_id,
+                request.steps,
+                high_time_sec,
+                low_time_sec,
+                stop_event,
+            )
+
+            if stopped_early:
+                return MotorStatusDto(success=True, message=f"Stopped early at {steps_completed}/{request.steps} steps.")
         finally:
             # We don't necessarily disable the driver here if holding torque is required, 
             # but standard practice is to disable after movement to save power/heat unless 
             # specifically requested. Let's disable for safety in this basic implementation.
             self._set_enable(request.stepper_id, False)
 
-        logger.info("TMC2209 %s completed movement.", request.stepper_id)
+        logger.info("TMC2209 completed movement", stepper_id=request.stepper_id)
         return MotorStatusDto(success=True, message=f"Successfully completed {request.steps} steps.")
 
     async def execute_movement(self, request: MotorCommandDto) -> MotorStatusDto:
@@ -117,7 +159,7 @@ class TMC2209Adapter(AdapterOutboundPort):
         stop_event = self.stop_events.get(stepper_id)
         if stop_event:
             stop_event.set()
-            logger.info("Emergency stop sent to TMC2209 %s", stepper_id)
+            logger.info("Emergency stop sent to TMC2209", stepper_id=stepper_id)
             return MotorStatusDto(success=True, message="Stop signal dispatched.")
         return MotorStatusDto(success=False, message="Invalid stepper_id")
 
@@ -132,3 +174,6 @@ class TMC2209Adapter(AdapterOutboundPort):
         if GPIO_AVAILABLE:
             GPIO.cleanup()
         return MotorStatusDto(success=True, message="Hardware cleanup completed.")
+
+    def is_available(self) -> bool:
+        return GPIO_AVAILABLE

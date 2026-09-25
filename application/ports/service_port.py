@@ -16,3 +16,8 @@ class StepperServicePort(ABC):
     async def stop_and_cleanup(self) -> ServiceBatchResponseDto:
         """Coordinate graceful teardown and release of device resources."""
         pass
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """True if the outbound hardware port is ready to accept commands."""
+        pass

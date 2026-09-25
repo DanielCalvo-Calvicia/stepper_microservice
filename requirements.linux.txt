@@ -3,3 +3,10 @@ uvicorn>=0.32.0
 pydantic==2.9.0
 python-dotenv==1.0.1
 RPi.GPIO==0.7.1
+
+# Shared logging + distributed tracing (local checkout; see shared-logging/README.md)
+-e ../shared-logging
+
+# Project contracts (single source of truth for what microservices exchange), bundled in this
+# folder so the service builds on its own. Refresh with contracts/scripts/bundle.py
+./vendor/contracts_microservice-0.8.0-py3-none-any.whl

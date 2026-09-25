@@ -6,8 +6,8 @@ from typing import AsyncIterator, Any
 class ServiceBatchRequestDto:
     stepper_id: str
     action: str  # 'rotate', 'steps', 'stop'
-    value: float
-    speed: float
+    value: float  # rotate -> full revolutions; steps -> number of steps
+    speed: float  # rotate -> RPM; steps -> steps per second
     direction: str
 
 @dataclass(slots=True, frozen=True)

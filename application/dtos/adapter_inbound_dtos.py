@@ -13,8 +13,8 @@ class StepperBatchRequestDto:
     """Inbound client payload for a single batch command (e.g., rotate, steps, stop)."""
     stepper_id: str
     action: str  # 'rotate', 'steps', 'stop'
-    value: float = 0.0  # degrees or number of steps
-    speed: float = 0.0  # steps per second (or RPM mapped to steps per sec)
+    value: float = 0.0  # rotate -> full revolutions; steps -> number of steps
+    speed: float = 0.0  # rotate -> RPM; steps -> steps per second
     direction: str = "forward"  # 'forward' or 'reverse'
 
 @dataclass(slots=True, frozen=True)

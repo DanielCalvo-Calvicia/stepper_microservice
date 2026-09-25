@@ -1,4 +1,14 @@
-fastapi==0.111.0
-uvicorn==0.30.1
-pydantic==2.7.4
-python-dotenv==1.0.1
+# Lower bounds, not pins: the old pins (fastapi 0.111.0, pydantic 2.7.4) have no wheels for Python 3.14
+# (pydantic-core would need a Rust toolchain). Windows only runs the mock adapter, so no GPIO library.
+# The Linux/Raspberry Pi file keeps exact pins because the Pi runs the real hardware.
+fastapi>=0.111.0
+uvicorn>=0.30.1
+pydantic>=2.7.4
+python-dotenv>=1.0.1
+
+# Shared logging + distributed tracing (local checkout; see shared-logging/README.md)
+-e ../shared-logging
+
+# Project contracts (single source of truth for what microservices exchange), bundled in this
+# folder so the service builds on its own. Refresh with contracts/scripts/bundle.py
+./vendor/contracts_microservice-0.8.0-py3-none-any.whl
