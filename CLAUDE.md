@@ -2,7 +2,7 @@
 
 Port **8005** (`SERVICE_PORT`). Python/FastAPI. Drives the stepper motors: two independent arms of the robot. Status: working, needs retest on the Pi. See `README.md` and `../CLAUDE.md`.
 
-Current state (2026-10-01): branch `feature_ai_claude_2` (tracks `origin/feature_ai_claude_2`). HEAD `372d197` is the old structure; **the restructure below is uncommitted**. It was rewritten to the layered layout of microphone/stt/tts/speaker and now uses `contracts` 0.10.0 (`STEPPER_INBOUND/OUTBOUND`) for its stream route. Other uncommitted files: the tracked `.env` (modified, deliberately not committed), the bannered `docs/README_*.md`, tracked `.pyc` noise. Tests: `69 passed` with `MOCK_HARDWARE=1`; ruff and mypy clean on the application code. The real GPIO path was never run here (needs a Raspberry Pi and the motors).
+Current state (2026-10-01): branch `feature_ai_claude_2` (tracks `origin/feature_ai_claude_2`). last feature commit `cb20c00` "Restructure to the layered layout and use contracts.stream for the command stream (contracts 0.10.0)" (pushed; before it `372d197`, the old structure). Uncommitted: only the tracked `.env` (modified, deliberately not committed) and tracked `.pyc` noise. Tests: `69 passed` with `MOCK_HARDWARE=1`; ruff and mypy clean on the application code. The real GPIO path was never run here (needs a Raspberry Pi and the motors).
 
 ## Role
 
