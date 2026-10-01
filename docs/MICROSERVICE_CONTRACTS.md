@@ -1,3 +1,6 @@
+<!-- NOT-STEPPER-DOC -->
+> **HISTORICAL (banner added 2026-10-01).** A report generated from the Brain microservice's code at an early date (it lists Brain's default URL and four external services). It is **not about the stepper** and it is out of date: it predates the `contracts.stream` events and the ai-agent and stepper services. The current wire formats are in `contracts/contracts/stream/README.md` and `contracts/contracts/api/README.md`, Brain's in `brain_microservice/docs/ARCHITECTURE.md`, and this service's in `README.md`.
+
 # Microservice Contract Report
 
 Generated from the current Brain microservice code, HTTP adapters, DTOs, tests, and service README files.

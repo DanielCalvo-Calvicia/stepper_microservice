@@ -1,3 +1,6 @@
+<!-- NOT-STEPPER-DOC -->
+> **OLD AI NOTES (banner added 2026-10-01).** Rules for AI agents generating microservices, written for an earlier layout. It is **not documentation of the stepper** and may not match the current code or the workspace rules in `../CLAUDE.md`. The current docs are `README.md` and `CLAUDE.md`.
+
 # Gemini Code Generation & Architecture Rules for Microservices
 
 This document defines the rules, naming conventions, directory structures, and code patterns for microservices in this repository. AI agents (such as Gemini/Antigravity) must follow these guidelines strictly when creating, modifying, or refactoring microservices.

@@ -1,3 +1,6 @@
+<!-- NOT-STEPPER-DOC -->
+> **This file is not about the stepper.** It is a copy of an early technical README of the speaker service (`speaker_microservice`). It is out of date: the stepper's own docs are `../README.md` and `../CLAUDE.md`, and the current docs of this service are `../../speaker_microservice/README.md` and `../../speaker_microservice/CLAUDE.md`. Treat everything below as history.
+
 # Speaker Microservice
 
 Technical handoff README for future maintainers and for AI/developer knowledge transfer when deriving related services from this codebase.

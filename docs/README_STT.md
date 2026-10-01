@@ -1,3 +1,6 @@
+<!-- NOT-STEPPER-DOC -->
+> **This file is not about the stepper.** It is a copy of an early technical README of the speech-to-text service (`stt_microservice`). It is out of date: the stepper's own docs are `../README.md` and `../CLAUDE.md`, and the current docs of this service are `../../stt_microservice/README.md` and `../../stt_microservice/CLAUDE.md`. Treat everything below as history.
+
 # STT Microservice Technical README
 
 This README is a technical knowledge-transfer document generated from inspection of the current repository. It is intended for future maintainers and for developers or AI systems creating derived projects from this codebase.

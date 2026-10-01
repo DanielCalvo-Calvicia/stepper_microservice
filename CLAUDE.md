@@ -1,42 +1,45 @@
 # CLAUDE.md: stepper_microservice
 
-Port **8005**. Python/FastAPI. Drives the stepper motors: two independent arms of the robot. Status: working, needs retest after recent changes. See `README.md` and `../CLAUDE.md`.
+Port **8005** (`SERVICE_PORT`). Python/FastAPI. Drives the stepper motors: two independent arms of the robot. Status: working, needs retest on the Pi. See `README.md` and `../CLAUDE.md`.
 
-Current state (2026-09-22): branch **`feature_code_revision`** (not `feature_ai_claude`), 34 uncommitted files (DTOs and mappers, `service.py`, container/dependency wiring, outbound adapters, `main.py`, `runtime/`, requirements, README, `.env`/`.env.example`, `tests/`), 12 of them untracked. Last commit "stable". Look at `git status` before editing so unrelated work isn't mixed in.
+Current state (2026-10-01): branch `feature_ai_claude_2` (tracks `origin/feature_ai_claude_2`). HEAD `372d197` is the old structure; **the restructure below is uncommitted**. It was rewritten to the layered layout of microphone/stt/tts/speaker and now uses `contracts` 0.10.0 (`STEPPER_INBOUND/OUTBOUND`) for its stream route. Other uncommitted files: the tracked `.env` (modified, deliberately not committed), the bannered `docs/README_*.md`, tracked `.pyc` noise. Tests: `69 passed` with `MOCK_HARDWARE=1`; ruff and mypy clean on the application code. The real GPIO path was never run here (needs a Raspberry Pi and the motors).
 
 ## Role
 
-**Only Brain will call this service** (planned, from the ai-agent's decisions). Nothing calls it yet.
+**Only Brain calls this service**, on the batch `/control/{id}/...` routes, from the ai-agent's movement decisions.
 
 | Path | Use |
 |---|---|
-| `POST /control/{stepper_id}/rotate` | `rotations`, `rpm`, `direction` |
-| `POST /control/{stepper_id}/steps` | `value`, `speed`, `direction` |
-| `POST /control/{stepper_id}/stop` | Emergency stop |
-| `POST /process/stream/{stepper_id}/set` | NDJSON commands while the request is open. **Not implemented**: `StepperService.execute_stream` reads and discards every event (`# In a real implementation, parse event...`); it only reports success/failure of opening the stream |
+| `POST /control/{stepper_id}/rotate` | query: `rotations`, `rpm`, `direction` |
+| `POST /control/{stepper_id}/steps` | query: `value`, `speed`, `direction` |
+| `POST /control/{stepper_id}/stop` | Emergency stop (bypasses the busy lock) |
+| `POST /process/stream/{stepper_id}/set` | NDJSON `STEPPER_INBOUND` commands (`stream_started`, `partial` per command, `completed`), answered with `STEPPER_OUTBOUND` events (`stream_started`, one `partial` result per command, `completed` or `error`). Executes the commands in order; a failed command ends the stream. Brain does not use it yet |
 | `GET /health` | Liveness |
-| `GET /available` | Whether the outbound motor driver (mock or TMC2209/GPIO) initialized; does not pulse a motor |
+| `GET /available` | Whether the motor driver (mock or TMC2209/GPIO) initialized; does not pulse a motor |
 
-Motors are configured in `STEPPER_CONFIGS` (JSON: id → BCM pins `step`, `dir`, `en`), e.g. `stepper_1` and `stepper_2` for the two arms. Also `SERVICE_HOST/PORT`, `ALLOWED_ORIGINS`, `STEPS_PER_REVOLUTION` (400 in `.env.example`), `DEFAULT_SPEED_LIMIT`, `MOCK_HARDWARE=1`. Each motor has its own async lock, so commands never overlap on the same motor.
+Answers use `ApiEnvelope`; `data = StepperBatchResult`, also on failures. Errors: 404 unknown stepper, 409 busy motor, 422 invalid command, 502 driver failed, else 500 (Brain treats any non-200 as a failed move). Each motor has its own async lock: a busy motor rejects, it does not queue.
+
+Motors are configured in `STEPPER_CONFIGS` (JSON: id -> BCM pins `step`, `dir`, `en`). Other env: `SERVICE_NAME`, `SERVICE_HOST/PORT`, `LOG_LEVEL`, `ALLOWED_ORIGINS`, `DEFAULT_SPEED_LIMIT` (1000.0), `STEPS_PER_REVOLUTION` (400), `MOCK_HARDWARE=1` (only the string `1` counts).
 
 ## Layout
 
-`main.py` → `composition_root/` → `application/` (`StepperService`, ports, DTOs, mappers) → `infrastructure/inbound/http/fastapi_adapter.py` and `infrastructure/outbound/` (`tmc2209_adapter.py` real hardware via `RPi.GPIO`, `mock_adapter.py`). Real hardware only works on a Raspberry Pi. Elsewhere it falls back to the mock. `runtime/environment.py` is **real code** (resolves `APP_ENV`/`VSCODE_ENV`).
+Same layered layout as the other services: `main.py` -> `main_flow/http.py` -> `composition_root/` (containers, `stepper_dependencies.py`) -> `application/` (`StepperService`, ports, DTOs, errors) -> `domain/` (`Movement`, `operations/conversion.py`) -> `infrastructure/` (`config/`, `inbound/http/`, `outbound/mock_motor/`, `outbound/tmc2209/`). `tests/architecture/` enforces that dependencies point inward. Real hardware only works on a Raspberry Pi; elsewhere it falls back to the mock driver.
 
-Not real code: `test/` (three hardware scripts: `simple_rotation_test.py`, `tmc2209_diagnostic.py`, `very_simple.py`), `stepper_config.json` (nothing reads it), `CODEX.md`/`GEMINI.md` (old AI notes), and `docs/README_*.md` (copies of the microphone, speaker, STT and TTS docs, not this service's).
+Not real code: `test/` (hardware scripts: `simple_rotation_test.py`, `tmc2209_diagnostic.py`, `very_simple.py`), `tests/simple_integration.py` (a script against a running service), `stepper_config.json` (nothing reads it), `CODEX.md`/`GEMINI.md` (old AI notes), `docs/README_*.md` (copies of other services' docs; bannered), `docs/MICROSERVICE_CONTRACTS.md` (historical Brain report).
 
 ## Rules
 
-- **Safety:** never move real motors without asking the user first, and respect step and speed limits. Prefer `MOCK_HARDWARE=1` for tests.
-- The shutdown path must always disable the enable pins and call `GPIO.cleanup()`. Do not break it.
-- Uses `shared_logging` (`init_logging("stepper", ...)`, `-e ../shared-logging` in requirements). Since 2026-09-22 it also uses `contracts` (`./vendor/contracts_microservice-0.8.0-py3-none-any.whl`): `/health`, `/available` and the three `/control/{id}/...` batch routes answer with `contracts.api.common.envelope.ApiEnvelope`, `data` built from `contracts.api.microservices.stepper.batch.StepperBatchResult` / `contracts.api.microservices.common`. The routes and their inbound DTOs (query params, not a JSON body) did not change, only the response envelope. `contracts.stream` gained registered `STEPPER_INBOUND`/`STEPPER_OUTBOUND` schemas, but `/process/stream/{id}/set` itself still doesn't use the codec or do anything with what it receives (see the API table above) — that's a separate, unstarted piece of work.
-- Git hygiene: the repo tracks `.env` and `.env.example` and has no `.gitignore`. `.env` only holds pin numbers today. Never put secrets in it, and tell the user before adding a `.gitignore`.
-- The venv was bare (only pytest, `shared-logging`, now `contracts`; no ruff, no mypy). It still has no FastAPI/uvicorn/pydantic installed even though `requirements.windows.txt` lists them: those pins (`pydantic==2.7.4`, `fastapi==0.111.0`) predate prebuilt wheels for Python 3.14 and fail to build from source without a Rust toolchain (`pip install -r requirements.windows.txt` fails on `pydantic-core`). Bumping the pins is real, deliberate work someone should do on purpose, not a side effect of an unrelated change — for now, install unpinned (`pip install --only-binary=:all: fastapi uvicorn pydantic`) to get a working venv for local dev/tests.
+- **Safety:** never move real motors without asking the user first, and respect step and speed limits. Use `MOCK_HARDWARE=1` for tests.
+- The shutdown path must always disable the enable pins and call `GPIO.cleanup()` (`StepperService.stop_and_cleanup`, run by the app lifespan and by `main_flow`). Do not break it.
+- Events come from `contracts.stream` through the codec, never hand-written JSON. `contracts` comes from `vendor/contracts_microservice-<version>.whl` (0.10.0); refresh it with `contracts/scripts/bundle.py`. New stepper events go into `contracts` first.
+- Uses `shared_logging` (`init_logging("stepper")` in `main_flow/http.py`, `-e ../shared-logging` in requirements). Messages are constant strings with keyword fields.
+- Git hygiene: the repo tracks `.env` and `.env.example` and has no `.gitignore`. `.env` only holds pin numbers today. Never put secrets in it, and tell the user before adding a `.gitignore`. Do not commit the modified `.env`.
+- `requirements.windows.txt` uses lower bounds (the old pins have no Python 3.14 wheels); `requirements.linux.txt` keeps mostly exact pins and `RPi.GPIO` for the Pi. Ruff/mypy/black are configured in `pyproject.toml` but not installed in this venv (use the microphone venv's).
 
 ## Commands
 
 ```powershell
 $env:MOCK_HARDWARE = "1"
 & windows\Scripts\python.exe main.py
-& windows\Scripts\python.exe -m pytest tests     # collects tests/test_tracing.py and tests/test_http_envelope.py; simple_integration.py is a script
+& windows\Scripts\python.exe -m pytest           # 69 tests, ~3 s, mock driver
 ```

@@ -1,3 +1,6 @@
+<!-- NOT-STEPPER-DOC -->
+> **This file is not about the stepper.** It is a copy of an early technical README of the text-to-speech service (`tts_microservice`). It is out of date: the stepper's own docs are `../README.md` and `../CLAUDE.md`, and the current docs of this service are `../../tts_microservice/README.md` and `../../tts_microservice/CLAUDE.md`. Treat everything below as history.
+
 # TTS Microservice Technical README
 
 This README is a technical knowledge-transfer document for the current `tts_microservice` codebase. It is based on repository inspection of the Python source, configuration files, tests, and checked-in runtime artifacts.

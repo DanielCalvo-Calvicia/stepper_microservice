@@ -1,3 +1,6 @@
+<!-- NOT-STEPPER-DOC -->
+> **This file is not about the stepper.** It is a copy of an early technical README of the microphone service (`microphone_microservice`). It is out of date: the stepper's own docs are `../README.md` and `../CLAUDE.md`, and the current docs of this service are `../../microphone_microservice/README.md` and `../../microphone_microservice/CLAUDE.md`. Treat everything below as history.
+
 # Microphone Microservice
 
 Technical knowledge-transfer README for the current `microphone_microservice` codebase.

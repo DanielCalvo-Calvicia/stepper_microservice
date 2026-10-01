@@ -1,3 +1,6 @@
+<!-- NOT-STEPPER-DOC -->
+> **OLD AI NOTES (banner added 2026-10-01).** Reusable context for generating a new module in the style of the old service docs. It is **not documentation of the stepper** and may not match the current code. The current docs are `README.md` and `CLAUDE.md`.
+
 # Codex Module Generation Context
 
 This file captures the reusable structure shared by the existing module documentation in `docs/`.
