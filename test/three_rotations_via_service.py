@@ -8,7 +8,6 @@ Nothing moves until you press Enter, so you can be watching the motor when it st
 
 Run it on the Pi (stdlib only, no virtualenv needed):
   python3 test/three_rotations_via_service.py --url http://<stepper-host>:8005
-  (or set STEPPER_BASE_URL and leave out --url)
 
 Options:
   --stepper-id stepper_2   which motor (default stepper_1)
@@ -22,7 +21,6 @@ Ctrl+C at any moment sends the emergency stop to the motor.
 
 import argparse
 import json
-import os
 import sys
 import time
 import urllib.error
@@ -67,7 +65,7 @@ def rotate(base_url: str, stepper_id: str, rotations: float, rpm: float, directi
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--url", default=os.environ.get("STEPPER_BASE_URL"), help="base URL of the stepper service")
+    parser.add_argument("--url", help="base URL of the stepper service (no host is assumed)")
     parser.add_argument("--stepper-id", default="stepper_1")
     parser.add_argument("--rotations", type=float, default=3.0)
     parser.add_argument("--rpm", type=float, default=30.0)
@@ -75,7 +73,7 @@ def main() -> int:
     parser.add_argument("--return-back", action="store_true")
     args = parser.parse_args()
     if not args.url:
-        parser.error("give --url or set STEPPER_BASE_URL (no host is assumed)")
+        parser.error("give --url (no host is assumed)")
     if args.rotations <= 0 or args.rpm <= 0:
         parser.error("--rotations and --rpm must be greater than 0")
 
