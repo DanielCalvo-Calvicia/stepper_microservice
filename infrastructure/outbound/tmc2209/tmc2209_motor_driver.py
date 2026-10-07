@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections.abc import Mapping
+from typing import Any
 
 from shared_logging import get_logger
 
@@ -9,10 +10,13 @@ from application.ports.outbound.motor_driver_port import MotorDriverPort
 from infrastructure.config.stepper_config import StepperPins
 
 try:
-    import RPi.GPIO as GPIO
+    import RPi.GPIO as _GPIO
+
+    GPIO: Any = _GPIO
 
     GPIO_AVAILABLE = True
 except ImportError:
+    GPIO = None
     GPIO_AVAILABLE = False
 
 logger = get_logger(__name__)
